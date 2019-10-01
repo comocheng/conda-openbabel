@@ -1,0 +1,85 @@
+From e287255158c2b220e169d8db4fcd4f85658a642d Mon Sep 17 00:00:00 2001
+From: Noel O'Boyle <baoilleach@gmail.com>
+Date: Thu, 8 Feb 2018 21:09:53 +0000
+Subject: [PATCH 1/2] Reset the DL open flags after loading the plugins.
+
+---
+ scripts/CMakeLists.txt | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/scripts/CMakeLists.txt b/scripts/CMakeLists.txt
+index 557aace67..bb62e2fe7 100644
+--- a/scripts/CMakeLists.txt
++++ b/scripts/CMakeLists.txt
+@@ -82,9 +82,11 @@ if (DO_PYTHON_BINDINGS)
+               COMMAND ${CMAKE_COMMAND} -E echo "import sys" > ob.py
+               COMMAND ${CMAKE_COMMAND} -E echo "if sys.platform.find('linux'\) != -1:" >> ob.py
+               COMMAND ${CMAKE_COMMAND} -E echo "  import ctypes" >> ob.py
++              COMMAND ${CMAKE_COMMAND} -E echo "  flags = sys.getdlopenflags()" >> ob.py
+               COMMAND ${CMAKE_COMMAND} -E echo "  sys.setdlopenflags(sys.getdlopenflags() | ctypes.RTLD_GLOBAL)" >> ob.py
+-              COMMAND cat ${openbabel_SOURCE_DIR}/scripts/python/openbabel.py >> ob.py
+-              COMMAND ${CMAKE_COMMAND} -E copy ob.py ${openbabel_SOURCE_DIR}/scripts/python/openbabel.py
++              COMMAND ${CMAKE_COMMAND} -E echo "  OBPlugin.LoadAllPlugins()" >> ob.py
++              COMMAND ${CMAKE_COMMAND} -E echo "  sys.setdlopenflags(flags)" >> ob.py
++              COMMAND cat ob.py >> ${openbabel_SOURCE_DIR}/scripts/python/openbabel.py
+               COMMAND ${CMAKE_COMMAND} -E remove ob.py
+               MAIN_DEPENDENCY openbabel-python.i
+               VERBATIM
+
+From 3b86b037b46bfa052d6f463f120eacfca5892e31 Mon Sep 17 00:00:00 2001
+From: Noel O'Boyle <baoilleach@gmail.com>
+Date: Sun, 11 Feb 2018 08:31:02 +0000
+Subject: [PATCH 2/2] Move the setting and resetting of the DL open flags to
+ where 'import _openbabel' occurs in openbabel.py
+
+---
+ scripts/CMakeLists.txt     |  9 ---------
+ scripts/openbabel-python.i | 15 +++++++++++++++
+ 2 files changed, 15 insertions(+), 9 deletions(-)
+
+diff --git a/scripts/CMakeLists.txt b/scripts/CMakeLists.txt
+index bb62e2fe7..5635a67ba 100644
+--- a/scripts/CMakeLists.txt
++++ b/scripts/CMakeLists.txt
+@@ -79,15 +79,6 @@ if (DO_PYTHON_BINDINGS)
+       else(WIN32)
+         add_custom_command(OUTPUT ${openbabel_SOURCE_DIR}/scripts/python/openbabel-python.cpp ${openbabel_SOURCE_DIR}/scripts/python/openbabel.py
+             COMMAND ${SWIG_EXECUTABLE} -python -c++ -small -O -templatereduce -naturalvar -I${openbabel_SOURCE_DIR}/include -I${openbabel_BINARY_DIR}/include -o ${openbabel_SOURCE_DIR}/scripts/python/openbabel-python.cpp ${eigen_define} -outdir ${openbabel_SOURCE_DIR}/scripts/python ${openbabel_SOURCE_DIR}/scripts/openbabel-python.i
+-              COMMAND ${CMAKE_COMMAND} -E echo "import sys" > ob.py
+-              COMMAND ${CMAKE_COMMAND} -E echo "if sys.platform.find('linux'\) != -1:" >> ob.py
+-              COMMAND ${CMAKE_COMMAND} -E echo "  import ctypes" >> ob.py
+-              COMMAND ${CMAKE_COMMAND} -E echo "  flags = sys.getdlopenflags()" >> ob.py
+-              COMMAND ${CMAKE_COMMAND} -E echo "  sys.setdlopenflags(sys.getdlopenflags() | ctypes.RTLD_GLOBAL)" >> ob.py
+-              COMMAND ${CMAKE_COMMAND} -E echo "  OBPlugin.LoadAllPlugins()" >> ob.py
+-              COMMAND ${CMAKE_COMMAND} -E echo "  sys.setdlopenflags(flags)" >> ob.py
+-              COMMAND cat ob.py >> ${openbabel_SOURCE_DIR}/scripts/python/openbabel.py
+-              COMMAND ${CMAKE_COMMAND} -E remove ob.py
+               MAIN_DEPENDENCY openbabel-python.i
+               VERBATIM
+               )
+diff --git a/scripts/openbabel-python.i b/scripts/openbabel-python.i
+index 91606fc27..cc686c90c 100644
+--- a/scripts/openbabel-python.i
++++ b/scripts/openbabel-python.i
+@@ -64,6 +64,21 @@
+ #include <openbabel/stereo/squareplanar.h>
+ #include <openbabel/stereo/bindings.h>
+ %}
++
++// Set and reset dlopenflags so that plugin loading works fine for "import _openbabel"
++%pythonbegin %{
++import sys
++if sys.platform.find("linux") != -1:
++    dlflags = sys.getdlopenflags()
++    import ctypes
++    sys.setdlopenflags(dlflags | ctypes.RTLD_GLOBAL)
++%}
++%pythoncode %{
++if sys.platform.find("linux") != -1:
++    sys.setdlopenflags(dlflags)
++%}
++
++
+ // Ignore methods that require std::vector of OBAtom.
+ %ignore OpenBabel::OBMol::FindChildren(std::vector< OBAtom * > &, OBAtom *, OBAtom *);
+ %ignore OpenBabel::OBResidue::GetAtoms;
